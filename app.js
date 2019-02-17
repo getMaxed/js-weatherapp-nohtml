@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const countryInput = document.createElement('input');
     countryInput.setAttribute('type', 'text');
     countryInput.setAttribute('id', 'country');
-    countryInput.setAttribute('placeholder', 'Enter City');
+    countryInput.setAttribute('placeholder', 'Enter Country');
 
     const submit = document.createElement('input');
     submit.setAttribute('type', 'submit');
@@ -26,18 +26,6 @@ document.addEventListener('DOMContentLoaded', () => {
     form.appendChild(cityInput);
     form.appendChild(countryInput);
     form.appendChild(submit);
-
-    // create form submit handler
-    form.onsubmit = e => {
-        e.preventDefault();
-
-        const city = document.querySelector('#city').value;
-        const country = document.querySelector('#country').value;
-
-        getData(city, country, table);
-        document.querySelector('#city').value = '';
-        document.querySelector('#country').value = '';
-    };
     /*
     |--------------------------------------------------------------------------
     | CREATE A TABLE
@@ -52,8 +40,61 @@ document.addEventListener('DOMContentLoaded', () => {
     */
     document.querySelector('body').appendChild(form);
     document.body.appendChild(table);
-});
+    /*
+    |--------------------------------------------------------------------------
+    | CHECK FOR DATA IN THE LOCAL STORAGE
+    |--------------------------------------------------------------------------
+    */
+    const lsData = JSON.parse(localStorage.getItem('weatherappData'));
+    (async () => {
+        for (const [index, { city, country }] of lsData.entries()) {
+            try {
+                if (index === 0) {
+                    await getData(city, country, table);
+                } else {
+                    await new Promise(resolve =>
+                        setTimeout(
+                            () => resolve(getData(city, country, table)),
+                            1000
+                        )
+                    );
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    })();
+    /*
+    |--------------------------------------------------------------------------
+    | HANDLE FORM SUBMIT
+    |--------------------------------------------------------------------------
+    */
+    form.onsubmit = e => {
+        e.preventDefault();
 
+        // gather input vars & parse Local Storage
+        const city = document.querySelector('#city').value;
+        const country = document.querySelector('#country').value;
+        const lsData = JSON.parse(localStorage.getItem('weatherappData'));
+
+        // check for duplicate values
+        const duplicateVal = lsData.some(
+            obj => obj.city.toUpperCase() === city.toUpperCase()
+        );
+
+        // get data
+        if (!duplicateVal) getData(city, country, table);
+
+        // clear input
+        document.querySelector('#city').value = '';
+        document.querySelector('#country').value = '';
+    };
+});
+/*
+|--------------------------------------------------------------------------
+| GET DATA
+|--------------------------------------------------------------------------
+*/
 async function getData(city, country, table) {
     /*
     |--------------------------------------------------------------------------
@@ -80,9 +121,9 @@ async function getData(city, country, table) {
     | COLLECT UI VARS
     |--------------------------------------------------------------------------
     */
-    const time = moment.tz(tzData.zoneName).format('h:m a');
-    const countryName = tzData.countryName;
     const cityName = weatherData.name;
+    const countryName = tzData.countryName;
+    const time = moment.tz(tzData.zoneName).format('hh:mm a');
     const temp = Math.floor(weatherData.main.temp);
     const humidity = weatherData.main.humidity;
     const weatherIcon = weatherData.weather[0].icon;
@@ -94,35 +135,36 @@ async function getData(city, country, table) {
     const tr = document.createElement('tr');
 
     // create table cells
-    const cityEl = document.createElement('td');
-    const timeEl = document.createElement('td');
-    const tempEl = document.createElement('td');
-    const humidityEl = document.createElement('td');
-    const imgEl = document.createElement('td');
-    const removeButton = document.createElement('td');
+    const locationCell = document.createElement('td');
+    const timeCell = document.createElement('td');
+    const temperatureCell = document.createElement('td');
+    const humidityCell = document.createElement('td');
+    const imgCell = document.createElement('td');
+    const removeButtonCell = document.createElement('td');
 
     // assign data to elements
-    cityEl.textContent = `${cityName}, ${countryName}`;
-    timeEl.textContent = time;
-    tempEl.textContent = `${temp} \xB0F`;
-    humidityEl.textContent = `humidity: ${humidity}%`;
+    locationCell.textContent = `${cityName}, ${countryName}`;
+    locationCell.classList.add('location');
+    timeCell.textContent = time;
+    timeCell.classList.add('time');
+    temperatureCell.textContent = `${temp} \xB0F`;
+    humidityCell.textContent = `humidity: ${humidity}%`;
     const img = document.createElement('img');
     img.setAttribute(
         'src',
         `http://openweathermap.org/img/w/${weatherIcon}.png`
     );
     img.setAttribute('style', 'height: 25px; width: 25px');
-    imgEl.appendChild(img);
-    removeButton.textContent = 'remove';
-    removeButton.onclick = e => e.target.parentElement.remove();
+    imgCell.appendChild(img);
+    removeButtonCell.textContent = 'remove';
 
     // append table cells to parent (table row)
-    tr.appendChild(cityEl);
-    tr.appendChild(timeEl);
-    tr.appendChild(tempEl);
-    tr.appendChild(humidityEl);
-    tr.appendChild(imgEl);
-    tr.appendChild(removeButton);
+    tr.appendChild(locationCell);
+    tr.appendChild(timeCell);
+    tr.appendChild(temperatureCell);
+    tr.appendChild(humidityCell);
+    tr.appendChild(imgCell);
+    tr.appendChild(removeButtonCell);
 
     // prepend table row to parent (table)
     table.prepend(tr);
@@ -142,4 +184,55 @@ async function getData(city, country, table) {
             'border: 1px solid #dddddd; padding: auto, 8px'
         );
     }
+
+    // set timer to update the time
+    tds.forEach(td => {
+        if (td.classList.contains('time')) {
+            td.textContent = moment.tz(tzData.zoneName).format('hh:mm a');
+            setInterval(() => {
+                timeCell.textContent = moment
+                    .tz(tzData.zoneName)
+                    .format('hh:mm a');
+            }, 1000);
+        }
+    });
+    /*
+    |--------------------------------------------------------------------------
+    | PERSIST DATA TO LOCAL STORAGE
+    |--------------------------------------------------------------------------
+    */
+    let locationNames = [];
+
+    // collect location names
+    tds.forEach(td => {
+        if (td.classList.contains('location'))
+            locationNames.push(td.textContent);
+    });
+    const locations = [];
+    locationNames.map(locationName => {
+        const locationObject = {};
+        const locationNameSplitted = locationName.split(', ');
+        locationObject['city'] = locationNameSplitted[0];
+        locationObject['country'] = locationNameSplitted[1];
+        locations.push(locationObject);
+    });
+    localStorage.setItem('weatherappData', JSON.stringify(locations));
+    /*
+    |--------------------------------------------------------------------------
+    | HANDLE REMOVE CITY
+    |--------------------------------------------------------------------------
+    */
+    removeButtonCell.onclick = e => {
+        // remove from localStorage
+        const locationToRemove = e.target.parentElement.firstChild.textContent.split(
+            ', '
+        );
+        const cityName = locationToRemove[0];
+        const lsData = JSON.parse(localStorage.getItem('weatherappData'));
+        const filteredLsData = lsData.filter(obj => obj.city !== cityName);
+        localStorage.setItem('weatherappData', JSON.stringify(filteredLsData));
+
+        // remove from the DOM
+        e.target.parentElement.remove();
+    };
 }
